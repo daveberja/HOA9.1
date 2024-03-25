@@ -1,0 +1,29 @@
+- hosts: remote_users
+  become: true
+  tasks:
+
+    - name: Create the private key
+      community.crypto.openssl_privatekey:
+        path: "/home/berja/CA_HOA9/tls.key"
+        size: 4096
+
+    - name: Create CSR
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "/home/berja/CA_HOA9/tls.key"
+        common_name: docker-registry
+        subject_alt_name:
+          - "DNS:docker-registry"
+        organizationName: "CPE"
+        emailAddress: "qcdlberja@tip.edu.ph"
+        commonName: "Christian"
+      register: csr
+
+    - name: Create Cert from CSR
+      community.crypto.x509_certificate:
+        path: "/home/berja/CA_HOA9/tls.crt"
+        csr_content: "{{ csr.csr }}"
+        privatekey_path: "/home/berja/CA_HOA9/tls.key"
+        provider: selfsigned
+        selfsigned_not_after: +365d
+        selfsigned_not_before: "-1d"
+        selfsigned_digest: "sha256"

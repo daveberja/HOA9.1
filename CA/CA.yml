@@ -1,0 +1,74 @@
+---
+- name: Setup Certificate Authority (CA) and sign CSR
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Create CA directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: 0755
+      with_items:
+        - /etc/ssl/CA
+        - /etc/ssl/newcerts
+
+    - name: Initialize serial file
+      copy:
+        content: "01\n"
+        dest: /etc/ssl/CA/serial
+
+    - name: Create empty index file
+      file:
+        path: /etc/ssl/CA/index.txt
+        state: touch
+
+    - name: Generate CA key and certificate
+      command: >
+        openssl req
+        -x509 -new -nodes
+        -keyout /etc/ssl/CA/cakey.pem
+        -out /etc/ssl/CA/cacert.pem
+        -days 3650
+        -subj "/C=US/ST=California/L=San Francisco/O=Your Organization/OU=Your Department/CN=localhost"
+      args:
+        creates: /etc/ssl/CA/cacert.pem
+
+    - name: Create CSR key
+      command: >
+        openssl genrsa
+        -out /etc/ssl/server.key
+        2048
+      args:
+        creates: /etc/ssl/server.key
+
+    - name: Create CSR
+      command: >
+        openssl req
+        -new
+        -key /etc/ssl/server.key
+        -out /etc/ssl/server.csr
+        -subj "/C=US/ST=California/L=San Francisco/O=Your Organization/OU=Your Department/CN=localhost"
+      args:
+        creates: /etc/ssl/server.csr
+
+- name: Transfer CSR to control node
+  hosts: remote_users
+  tasks:
+    - name: Copy CSR from manage node to control node
+      fetch:
+        src: /etc/ssl/server.csr
+        dest: /tmp/server.csr
+
+    - name: Sign CSR on control node
+      hosts: remote_users
+      become: yes
+      shell: >
+        openssl ca
+        -in /tmp/server.csr
+        -out /etc/ssl/newcerts/$(awk 'END{print $1}' /etc/ssl/CA/serial).pem
+
+    - name: Update index file
+      command: >
+        openssl ca
+        -gencrl
+        -out /etc/ssl/CA/crl.pem
